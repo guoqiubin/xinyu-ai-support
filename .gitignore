@@ -1,0 +1,10 @@
+.next
+node_modules
+.env
+.env*
+!.env.example
+dist
+out
+*.log
+recreated-app/
+.npm-cache-local/
