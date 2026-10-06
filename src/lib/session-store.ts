@@ -95,20 +95,19 @@ export function createInitialSession(input?: {
 export function createVisitorProfile(age = 26, gender: Gender = "other"): VisitorProfile {
   const normalizedAge = Number.isFinite(age) ? Math.min(99, Math.max(12, Math.round(age))) : 26;
   const ageGroup = getAgeGroup(normalizedAge);
-  const seed = `xinyu-visitor-${gender}-${ageGroup}-${normalizedAge}`;
 
   return {
     age: normalizedAge,
     gender,
     ageGroup,
-    avatarUrl: buildDiceBearUrl("avataaars", seed)
+    avatarUrl: buildVisitorAvatar(gender, ageGroup)
   };
 }
 
 export function createTherapistProfile(orientation: TherapyOrientation = "integrative"): TherapistProfile {
   return {
     orientation,
-    avatarUrl: buildDiceBearUrl("lorelei", `xinyu-therapist-${orientation}`)
+    avatarUrl: buildTherapistAvatar(orientation)
   };
 }
 
@@ -219,8 +218,8 @@ export function endSession(
 
 function normalizeSession(session: Partial<ConsultationSession>): ConsultationSession {
   const selectedTags = session.selectedTags ?? [];
-  const visitorProfile = session.visitorProfile ?? createVisitorProfile();
-  const therapistProfile = session.therapistProfile ?? createTherapistProfile();
+  const visitorProfile = normalizeVisitorProfile(session.visitorProfile);
+  const therapistProfile = normalizeTherapistProfile(session.therapistProfile);
 
   return {
     id: session.id ?? createId("session"),
@@ -250,11 +249,103 @@ function getAgeGroup(age: number): VisitorProfile["ageGroup"] {
   return "older_adult";
 }
 
-function buildDiceBearUrl(style: "avataaars" | "lorelei", seed: string) {
-  const params = new URLSearchParams({
-    seed,
-    backgroundColor: "f7f2ea,e5eee8,fff8ee",
-    radius: "50"
-  });
-  return `https://api.dicebear.com/10.x/${style}/svg?${params.toString()}`;
+function normalizeVisitorProfile(profile?: Partial<VisitorProfile>): VisitorProfile {
+  const age = profile?.age ?? 26;
+  const gender = profile?.gender ?? "other";
+  return createVisitorProfile(age, gender);
+}
+
+function normalizeTherapistProfile(profile?: Partial<TherapistProfile>): TherapistProfile {
+  return createTherapistProfile(profile?.orientation ?? "integrative");
+}
+
+function buildVisitorAvatar(gender: Gender, ageGroup: VisitorProfile["ageGroup"]) {
+  const palette = getVisitorPalette(gender, ageGroup);
+  return svgDataUri(`
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img" aria-label="visitor avatar">
+      <rect width="96" height="96" rx="48" fill="${palette.bg}"/>
+      <path d="M18 86c3-17 15-27 30-27s27 10 30 27" fill="${palette.clothes}"/>
+      <circle cx="48" cy="42" r="22" fill="${palette.skin}"/>
+      <path d="${palette.hairPath}" fill="${palette.hair}"/>
+      <circle cx="39" cy="43" r="2.3" fill="#302a25"/>
+      <circle cx="57" cy="43" r="2.3" fill="#302a25"/>
+      <path d="M40 54c4 4 12 4 16 0" fill="none" stroke="#6f5141" stroke-width="3" stroke-linecap="round"/>
+      <path d="M23 86c5-11 14-17 25-17s20 6 25 17" fill="${palette.clothesShade}" opacity="0.55"/>
+    </svg>
+  `);
+}
+
+function buildTherapistAvatar(orientation: TherapyOrientation) {
+  const palette = getTherapistPalette(orientation);
+  return svgDataUri(`
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img" aria-label="therapist avatar">
+      <rect width="96" height="96" rx="48" fill="${palette.bg}"/>
+      <path d="M18 88c3-18 15-29 30-29s27 11 30 29" fill="${palette.clothes}"/>
+      <circle cx="48" cy="42" r="22" fill="#f1c9aa"/>
+      <path d="M26 39c2-16 13-25 28-23 12 2 20 12 18 27-5-9-14-13-25-13-9 0-16 3-21 9Z" fill="#5f5247"/>
+      <path d="M29 43c4-8 11-12 20-12 8 0 14 3 19 9" fill="none" stroke="#77695f" stroke-width="5" stroke-linecap="round"/>
+      <circle cx="39" cy="44" r="2.2" fill="#302a25"/>
+      <circle cx="57" cy="44" r="2.2" fill="#302a25"/>
+      <path d="M40 55c4 4 12 4 16 0" fill="none" stroke="#725546" stroke-width="3" stroke-linecap="round"/>
+      <path d="M36 67h24l-4 21H40Z" fill="#fff8ee" opacity="0.92"/>
+      <path d="M25 88c5-11 13-17 23-17s18 6 23 17" fill="${palette.accent}" opacity="0.42"/>
+    </svg>
+  `);
+}
+
+function getVisitorPalette(gender: Gender, ageGroup: VisitorProfile["ageGroup"]) {
+  const skin = ageGroup === "teen" ? "#f4c7aa" : ageGroup === "older_adult" ? "#e8b98f" : "#efc09c";
+  const base = {
+    male: {
+      bg: "#e5eee8",
+      hair: ageGroup === "older_adult" ? "#8b8379" : "#4f4038",
+      clothes: "#5f7f72",
+      clothesShade: "#426459",
+      skin,
+      hairPath:
+        ageGroup === "teen"
+          ? "M25 39c2-15 13-24 27-22 12 2 19 10 20 23-10-7-22-9-34-5-5 2-9 3-13 4Z"
+          : "M25 40c1-16 12-25 27-24 13 1 21 11 21 25-8-8-20-11-34-7-5 2-9 4-14 6Z"
+    },
+    female: {
+      bg: "#f2e8dc",
+      hair: ageGroup === "older_adult" ? "#8c857b" : "#5c4639",
+      clothes: "#7b6f8f",
+      clothesShade: "#5f5574",
+      skin,
+      hairPath:
+        ageGroup === "teen"
+          ? "M23 49c0-20 10-32 26-32 15 0 25 11 25 31-7-11-16-16-27-16-10 0-18 6-24 17Z"
+          : "M22 52c0-21 10-35 27-35 16 0 26 12 26 35-6-13-15-19-27-19-11 0-20 6-26 19Z"
+    },
+    other: {
+      bg: "#f0eadf",
+      hair: ageGroup === "older_adult" ? "#8b8379" : "#594b43",
+      clothes: "#6f817b",
+      clothesShade: "#566a64",
+      skin,
+      hairPath:
+        "M25 41c2-16 13-25 28-24 13 1 21 11 20 25-8-7-18-10-31-8-7 1-12 4-17 7Z"
+    }
+  };
+
+  return base[gender];
+}
+
+function getTherapistPalette(orientation: TherapyOrientation) {
+  const palettes: Record<TherapyOrientation, { bg: string; clothes: string; accent: string }> = {
+    integrative: { bg: "#efe5d6", clothes: "#6b7d73", accent: "#ddcdb8" },
+    cbt: { bg: "#e5eee8", clothes: "#5f7f72", accent: "#cbdcd2" },
+    humanistic: { bg: "#f3e4d9", clothes: "#806d61", accent: "#e7cbbb" },
+    psychodynamic: { bg: "#ebe6ef", clothes: "#726985", accent: "#d8d0e4" },
+    solution_focused: { bg: "#eef0df", clothes: "#74805d", accent: "#dce0be" },
+    mindfulness: { bg: "#e4ece9", clothes: "#627d7a", accent: "#cbded9" }
+  };
+
+  return palettes[orientation];
+}
+
+function svgDataUri(svg: string) {
+  const compactSvg = svg.replace(/\s+/g, " ").trim();
+  return `data:image/svg+xml;utf8,${encodeURIComponent(compactSvg)}`;
 }

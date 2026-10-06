@@ -454,14 +454,15 @@ function AvatarImage({
   fallback: string;
   src: string;
 }) {
+  const [failed, setFailed] = useState(false);
+
   return (
-    <div
-      aria-label={alt}
-      className={`avatar ${className}`}
-      role="img"
-      style={{ backgroundImage: `url("${src}")` }}
-    >
-      <span>{fallback}</span>
+    <div aria-label={alt} className={`avatar ${className}`} role="img">
+      {failed ? (
+        <span>{fallback}</span>
+      ) : (
+        <img alt="" src={src} onError={() => setFailed(true)} />
+      )}
     </div>
   );
 }
