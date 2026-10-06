@@ -11,6 +11,7 @@ import {
   formatRemaining,
   getAvailableTags,
   getComingSoonTags,
+  getNextPhase,
   getUnsupportedTags,
   getRemainingSeconds,
   isSessionExpired,
@@ -119,6 +120,7 @@ export default function ChatPage() {
     if (!session) return;
     const next = {
       ...session,
+      phase: "intake" as const,
       primaryTag: tag,
       messages: [
         ...session.messages,
@@ -131,6 +133,23 @@ export default function ChatPage() {
       ]
     };
     updateSession(next);
+  }
+
+  function skipCurrentStep() {
+    if (!session || waitingForTags || waitingForPrimary || isSending) return;
+
+    const nextPhase = getNextPhase(session.phase);
+    const assistantMessage: Message = {
+      id: createId("msg"),
+      role: "assistant",
+      content: buildSkipMessage(session.phase, nextPhase),
+      createdAt: new Date().toISOString()
+    };
+
+    updateSession({
+      ...appendMessage(session, assistantMessage),
+      phase: nextPhase
+    });
   }
 
   async function sendMessage() {
@@ -161,9 +180,12 @@ export default function ChatPage() {
       const minimumDelay = wait(1300 + Math.floor(Math.random() * 1100));
       const [response] = await Promise.all([responsePromise, minimumDelay]);
       const data = (await response.json()) as ChatResponse;
+      const shouldAdvanceToFormulation =
+        data.assistantMessage.content.includes("当前信息收集完毕") && withUserMessage.phase === "intake";
       const next: ConsultationSession = {
         ...withUserMessage,
         status: data.sessionStatus,
+        phase: shouldAdvanceToFormulation ? "formulation" : withUserMessage.phase,
         crisisDetected: data.riskTriggered || withUserMessage.crisisDetected,
         offTopicCount: data.offTopic ? withUserMessage.offTopicCount + 1 : 0,
         messages: [...withUserMessage.messages, data.assistantMessage]
@@ -207,6 +229,7 @@ export default function ChatPage() {
   const waitingForTags = session.selectedTags.length === 0;
   const waitingForPrimary = session.selectedTags.length > 0 && !session.primaryTag;
   const pausedForOffTopic = session.offTopicCount >= 2;
+  const canSkipStep = !waitingForTags && !waitingForPrimary && session.status === "active" && !isSending;
 
   return (
     <main className="chat-shell">
@@ -228,7 +251,7 @@ export default function ChatPage() {
               {message.content}
             </div>
           ) : (
-            <ChatMessage key={message.id} message={message} />
+            <ChatMessage key={message.id} message={message} session={session} />
           )
         )}
 
@@ -292,9 +315,12 @@ export default function ChatPage() {
 
         {isSending && (
           <div className="message assistant">
-            <div className="avatar assistant-avatar" aria-hidden="true">
-              心
-            </div>
+            <AvatarImage
+              alt="咨询师头像"
+              className="assistant-avatar"
+              fallback="咨"
+              src={session.therapistProfile.avatarUrl}
+            />
             <div className="bubble typing-bubble" aria-label="对方正在输入">
               <span>对方正在输入</span>
               <span className="typing-dot" />
@@ -306,6 +332,12 @@ export default function ChatPage() {
 
         <div ref={bottomRef} />
       </section>
+
+      {canSkipStep && (
+        <button className="floating-skip-button" onClick={skipCurrentStep} type="button">
+          跳过当前步骤
+        </button>
+      )}
 
       <footer className="composer">
         <textarea
@@ -354,12 +386,15 @@ export default function ChatPage() {
   );
 }
 
-function ChatMessage({ message }: { message: Message }) {
+function ChatMessage({ message, session }: { message: Message; session: ConsultationSession }) {
   const isUser = message.role === "user";
   const avatar = (
-    <div className={`avatar ${isUser ? "user-avatar" : "assistant-avatar"}`} aria-hidden="true">
-      {isUser ? "访" : "心"}
-    </div>
+    <AvatarImage
+      alt={isUser ? "来访者头像" : "咨询师头像"}
+      className={isUser ? "user-avatar" : "assistant-avatar"}
+      fallback={isUser ? "访" : "咨"}
+      src={isUser ? session.visitorProfile.avatarUrl : session.therapistProfile.avatarUrl}
+    />
   );
 
   return (
@@ -369,6 +404,47 @@ function ChatMessage({ message }: { message: Message }) {
       {isUser && avatar}
     </div>
   );
+}
+
+function AvatarImage({
+  alt,
+  className,
+  fallback,
+  src
+}: {
+  alt: string;
+  className: string;
+  fallback: string;
+  src: string;
+}) {
+  return (
+    <div
+      aria-label={alt}
+      className={`avatar ${className}`}
+      role="img"
+      style={{ backgroundImage: `url("${src}")` }}
+    >
+      <span>{fallback}</span>
+    </div>
+  );
+}
+
+function buildSkipMessage(currentPhase: ConsultationSession["phase"], nextPhase: ConsultationSession["phase"]) {
+  if (currentPhase === "intake") {
+    return "好的，我们先不继续收集细节，进入下一步。接下来我会把你已经说到的内容整理成一个初步理解：情境里发生了什么、你怎么理解它、它带来了哪些情绪/身体反应，以及你后来怎么应对。";
+  }
+
+  if (currentPhase === "formulation") {
+    return "可以，我们先不继续分析这条链条，进入探索阶段。接下来会更关注你想要的变化、已有资源，以及一个足够小、不会给你增加负担的下一步。";
+  }
+
+  if (currentPhase === "exploration") {
+    return "好的，我们进入收束阶段。接下来我会帮你回顾今天最重要的理解、仍然可以继续探索的部分，以及你愿意带走的一点点方向。";
+  }
+
+  return nextPhase === "closing"
+    ? "我们已经在收束阶段了。你可以继续补充，也可以点击结束咨询生成本次总结。"
+    : "好的，我们进入下一步。";
 }
 
 function wait(ms: number) {

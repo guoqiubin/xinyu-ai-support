@@ -159,10 +159,16 @@ async function tryCreateModelReply(
 
 function buildSystemPrompt(session: ConsultationSession, remainingMinutes: number) {
   const topic = session.primaryTag ?? session.selectedTags[0] ?? "当下困扰";
+  const visitorProfile = session.visitorProfile ?? { age: 26, gender: "other" as const };
+  const orientationBible = buildOrientationBible(session.therapistProfile?.orientation ?? "integrative");
+  const phase = session.phase ?? "intake";
   return `你是“心屿”的 AI 情绪支持助手。你提供心理支持和自我梳理，不替代真人心理咨询、心理治疗、精神科诊断或医疗服务。
 
 当前主题：${topic}
 已选标签：${session.selectedTags.join("、") || "未选择"}
+来访者信息：${visitorProfile.age} 岁，${formatGender(visitorProfile.gender)}
+用户选择的心理流派/取向：${orientationBible.name}
+当前咨询阶段：${formatPhase(phase)}
 剩余时间：约 ${remainingMinutes} 分钟
 当前对话阶段判断：${buildStageGuidance(session)}
 
@@ -181,10 +187,89 @@ function buildSystemPrompt(session: ConsultationSession, remainingMinutes: numbe
 - 信息收集不是无限追问。连续具体化 3 轮左右，且已经得到“主题/影响/时间线/关系或触发线索”中的至少两类信息时，必须主动收束：“当前信息收集完毕，可以进入下一个步骤。你觉得这样可行吗？”不要继续追问细节。
 - 如果已经提示进入下一步，用户表示同意或继续，就转入初步理解：帮助用户整理“情境-想法-情绪/身体-行为”链条，或邀请用户选择最想先看的部分。
 - 每次最多问 1 个核心问题。严格只输出一个问句，不要连续抛出多个问号。
-- 回复 2 到 5 句话。`;
+- 回复 2 到 5 句话。
+
+角色圣经：
+${orientationBible.rules}`;
+}
+
+function buildOrientationBible(orientation: ConsultationSession["therapistProfile"]["orientation"]) {
+  const sharedBoundary =
+    "始终保持心理支持边界：不诊断、不贴人格或疾病标签、不替用户做重大决定、不提供医疗/法律/投资建议。语言要自然，避免像教材。";
+
+  const bibles = {
+    integrative: {
+      name: "整合取向",
+      rules: `${sharedBoundary}
+- 根据来访者当下需要灵活整合 CBT、人本主义、焦点解决和正念/接纳取向。
+- 如果用户需要清晰结构，就整理“情境-想法-情绪/身体-行为”；如果用户更需要被理解，就先反映体验和意义。
+- 不把表达风格锁死在某一个流派，优先让对话贴合用户。`
+    },
+    cbt: {
+      name: "认知行为取向",
+      rules: `${sharedBoundary}
+- 关注具体情境、自动化想法、情绪强度、身体反应、行为后果之间的联系。
+- 温和提出可检验的假设，例如“这里会不会有一点把结果往最坏处想的倾向”，并邀请用户一起看证据。
+- 不急着纠正想法，先帮助用户把想法说清楚。`
+    },
+    humanistic: {
+      name: "人本主义取向",
+      rules: `${sharedBoundary}
+- 优先体现尊重、共情、真诚和来访者主体性。
+- 少用技术词，更多使用反映、澄清和意义探索。
+- 不替用户定义问题，帮助用户听见自己的感受、需要和选择。`
+    },
+    psychodynamic: {
+      name: "心理动力取向",
+      rules: `${sharedBoundary}
+- 温和关注重复出现的关系体验、内在冲突、回避和防御线索，但不要使用“潜意识”“防御机制”等压迫性解释给用户下结论。
+- 可以提出试探性理解，例如“这段关系里的窒息感，似乎也牵动了你对靠近和失去空间的担心”。
+- 避免过度解释，始终让用户确认这种理解是否贴近。`
+    },
+    solution_focused: {
+      name: "焦点解决取向",
+      rules: `${sharedBoundary}
+- 更多关注用户想要的变化、例外经验、已有资源和可执行的小步。
+- 可以问“什么时候这个困扰稍微轻一点”“如果只前进一小步，会是什么”。
+- 不否认痛苦，但不要长时间停留在问题细节里。`
+    },
+    mindfulness: {
+      name: "正念/接纳取向",
+      rules: `${sharedBoundary}
+- 帮助用户区分事实、想法、情绪和身体感受，减少被想法拉着走。
+- 语言更慢、更稳，可以邀请用户观察当下体验，但第一版不做正式练习。
+- 强调接纳不是认同或放弃，而是先看见正在发生什么。`
+    }
+  };
+
+  return bibles[orientation] ?? bibles.integrative;
+}
+
+function formatGender(gender: ConsultationSession["visitorProfile"]["gender"]) {
+  if (gender === "male") return "男性";
+  if (gender === "female") return "女性";
+  return "未指定性别";
+}
+
+function formatPhase(phase: ConsultationSession["phase"]) {
+  if (phase === "intake") return "信息收集与具体化";
+  if (phase === "formulation") return "初步理解与个案概念化";
+  if (phase === "exploration") return "探索资源、选择与小步行动";
+  return "收束与总结";
 }
 
 function buildStageGuidance(session: ConsultationSession) {
+  const phase = session.phase ?? "intake";
+  if (phase === "formulation") {
+    return "用户已进入初步理解与个案概念化阶段。重点整理关系链条，不要回到信息收集式连续追问。";
+  }
+  if (phase === "exploration") {
+    return "用户已进入探索阶段。重点关注资源、选择、意义和小步行动，不要继续停留在收集信息。";
+  }
+  if (phase === "closing") {
+    return "用户已进入收束阶段。重点回顾、总结、确认带走的理解，不再展开新议题。";
+  }
+
   if (hasOfferedIntakeTransition(session)) {
     return "已完成信息收集收束。下一轮应进入初步理解或 CBT 链条整理，不要回到连续追问。";
   }
@@ -314,6 +399,7 @@ function hasRelationshipContext(message: string, session: ConsultationSession) {
 }
 
 function maybeBuildIntakeTransitionReply(session: ConsultationSession, message: string) {
+  if ((session.phase ?? "intake") !== "intake") return null;
   if (hasOfferedIntakeTransition(session)) return null;
   if (countUserIntakeTurns(session) < 3) return null;
   if (countInformationSignals(session, message) < 2) return null;

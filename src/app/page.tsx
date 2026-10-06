@@ -8,13 +8,18 @@ import {
   createInitialSession,
   isSessionExpired,
   loadActiveSession,
-  saveActiveSession
+  saveActiveSession,
+  therapyOrientations
 } from "@/lib/session-store";
-import type { ConsultationSession } from "@/lib/types";
+import type { ConsultationSession, Gender, TherapyOrientation } from "@/lib/types";
 
 export default function Home() {
   const router = useRouter();
   const [activeSession, setActiveSession] = useState<ConsultationSession | null>(null);
+  const [age, setAge] = useState("26");
+  const [gender, setGender] = useState<Gender>("other");
+  const [orientation, setOrientation] = useState<TherapyOrientation>("integrative");
+  const [formNotice, setFormNotice] = useState<string | null>(null);
 
   useEffect(() => {
     const existing = loadActiveSession();
@@ -22,8 +27,18 @@ export default function Home() {
   }, []);
 
   function startConsultation() {
+    const numericAge = Number(age);
+    if (!Number.isFinite(numericAge) || numericAge < 12 || numericAge > 99) {
+      setFormNotice("请填写 12 到 99 岁之间的年龄。");
+      return;
+    }
+
     clearActiveSession();
-    const session = createInitialSession();
+    const session = createInitialSession({
+      age: numericAge,
+      gender,
+      orientation
+    });
     saveActiveSession(session);
     router.push("/chat");
   }
@@ -51,6 +66,59 @@ export default function Home() {
           </ul>
         </details>
 
+        <section className="intake-form" aria-label="开始前信息">
+          <div className="form-section-header">
+            <h2>开始前简单了解你</h2>
+            <p>仅用于匹配默认头像和调整对话风格，不作为诊断或评估依据。</p>
+          </div>
+
+          <div className="form-grid">
+            <label className="field-label">
+              年龄
+              <input
+                min={12}
+                max={99}
+                inputMode="numeric"
+                value={age}
+                onChange={(event) => setAge(event.target.value)}
+                placeholder="例如 26"
+                type="number"
+              />
+            </label>
+
+            <label className="field-label">
+              性别
+              <select value={gender} onChange={(event) => setGender(event.target.value as Gender)}>
+                <option value="female">女性</option>
+                <option value="male">男性</option>
+                <option value="other">其他/暂不说明</option>
+              </select>
+            </label>
+          </div>
+
+          <div className="orientation-section">
+            <div className="form-section-header compact">
+              <h2>心理流派/取向</h2>
+              <p>如果不确定，建议选择“整合取向”。</p>
+            </div>
+            <div className="orientation-grid">
+              {therapyOrientations.map((item) => (
+                <button
+                  key={item.id}
+                  className={`orientation-card ${orientation === item.id ? "selected" : ""}`}
+                  onClick={() => setOrientation(item.id)}
+                  type="button"
+                >
+                  <strong>{item.name}</strong>
+                  <span>{item.description}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {formNotice && <p className="system-note">{formNotice}</p>}
+        </section>
+
         <div className="home-actions">
           {activeSession ? (
             <>
@@ -75,6 +143,24 @@ export default function Home() {
           <Link href="/privacy">隐私政策</Link>
           <Link href="/terms">服务条款</Link>
         </footer>
+
+        <section className="friend-links" aria-label="友情链接">
+          <h2>友情链接</h2>
+          <div>
+            <a href="https://vercel-deploy-zeta-indol.vercel.app/#/tools/interview" target="_blank" rel="noreferrer">
+              心理学硕博助手
+            </a>
+            <a href="https://new-chat-six-taupe.vercel.app/" target="_blank" rel="noreferrer">
+              策略运营助手
+            </a>
+            <a href="https://cbst-dialogue-mvp.vercel.app/" target="_blank" rel="noreferrer">
+              CBST 对话工具
+            </a>
+            <a href="https://intelligent-writing-advisor.vercel.app/" target="_blank" rel="noreferrer">
+              智能写作助手
+            </a>
+          </div>
+        </section>
       </section>
     </main>
   );

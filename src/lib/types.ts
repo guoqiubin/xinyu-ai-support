@@ -21,6 +21,30 @@ export type Summary = {
   createdAt: string;
 };
 
+export type Gender = "male" | "female" | "other";
+
+export type TherapyOrientation =
+  | "integrative"
+  | "cbt"
+  | "humanistic"
+  | "psychodynamic"
+  | "solution_focused"
+  | "mindfulness";
+
+export type ConsultationPhase = "intake" | "formulation" | "exploration" | "closing";
+
+export type VisitorProfile = {
+  age: number;
+  gender: Gender;
+  ageGroup: "teen" | "young_adult" | "adult" | "older_adult";
+  avatarUrl: string;
+};
+
+export type TherapistProfile = {
+  orientation: TherapyOrientation;
+  avatarUrl: string;
+};
+
 export type SessionStatus =
   | "active"
   | "ended"
@@ -33,6 +57,9 @@ export type ConsultationSession = {
   status: SessionStatus;
   selectedTags: string[];
   primaryTag: string | null;
+  phase: ConsultationPhase;
+  visitorProfile: VisitorProfile;
+  therapistProfile: TherapistProfile;
   startedAt: string;
   expiresAt: string;
   endedAt?: string;
