@@ -228,9 +228,7 @@ export default function ChatPage() {
               {message.content}
             </div>
           ) : (
-            <div key={message.id} className={`message ${message.role}`}>
-              <div className="bubble">{message.content}</div>
-            </div>
+            <ChatMessage key={message.id} message={message} />
           )
         )}
 
@@ -294,6 +292,9 @@ export default function ChatPage() {
 
         {isSending && (
           <div className="message assistant">
+            <div className="avatar assistant-avatar" aria-hidden="true">
+              心
+            </div>
             <div className="bubble typing-bubble" aria-label="对方正在输入">
               <span>对方正在输入</span>
               <span className="typing-dot" />
@@ -350,6 +351,23 @@ export default function ChatPage() {
         </div>
       )}
     </main>
+  );
+}
+
+function ChatMessage({ message }: { message: Message }) {
+  const isUser = message.role === "user";
+  const avatar = (
+    <div className={`avatar ${isUser ? "user-avatar" : "assistant-avatar"}`} aria-hidden="true">
+      {isUser ? "访" : "心"}
+    </div>
+  );
+
+  return (
+    <div className={`message ${message.role}`}>
+      {!isUser && avatar}
+      <div className="bubble">{message.content}</div>
+      {isUser && avatar}
+    </div>
   );
 }
 

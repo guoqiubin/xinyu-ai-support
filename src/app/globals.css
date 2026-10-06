@@ -213,6 +213,8 @@ a {
 
 .message {
   display: flex;
+  align-items: flex-start;
+  gap: 8px;
   margin-bottom: 14px;
 }
 
@@ -220,9 +222,34 @@ a {
   justify-content: flex-end;
 }
 
+.avatar {
+  flex: 0 0 34px;
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  font-size: 14px;
+  font-weight: 750;
+  line-height: 1;
+  user-select: none;
+}
+
+.assistant-avatar {
+  background: #efe5d6;
+  color: #5c5247;
+}
+
+.user-avatar {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fffdf8;
+}
+
 .bubble {
   width: fit-content;
-  max-width: min(86%, 560px);
+  max-width: min(calc(86% - 42px), 560px);
   padding: 12px 14px;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -459,6 +486,6 @@ a {
   }
 
   .bubble {
-    max-width: 92%;
+    max-width: calc(92% - 42px);
   }
 }

@@ -91,6 +91,16 @@ export async function POST(request: Request) {
     });
   }
 
+  const transitionReply = maybeBuildIntakeTransitionReply(body.session, message);
+  if (transitionReply) {
+    return NextResponse.json({
+      assistantMessage: createMessage(transitionReply),
+      sessionStatus: "active",
+      riskTriggered: false,
+      offTopic: false
+    });
+  }
+
   const modelReply = await tryCreateModelReply(body.session, message, body.remainingMinutes);
   const content = modelReply ?? buildSupportiveReply(message, body.session, body.remainingMinutes);
 
@@ -154,6 +164,7 @@ function buildSystemPrompt(session: ConsultationSession, remainingMinutes: numbe
 当前主题：${topic}
 已选标签：${session.selectedTags.join("、") || "未选择"}
 剩余时间：约 ${remainingMinutes} 分钟
+当前对话阶段判断：${buildStageGuidance(session)}
 
 你只能回复心理支持、情绪梳理、心理咨询过程相关内容。
 遇到投资、法律、医疗诊断、用药、政治、具体重大决策等问题，要解释边界并拉回其背后的情绪。
@@ -167,8 +178,24 @@ function buildSystemPrompt(session: ConsultationSession, remainingMinutes: numbe
 - 用户说“怎么办”时，不要机械拒绝；先承接痛苦，再说明不能替用户决定，并帮助梳理处境、感受、担心和看重的东西。
 - 必须读懂用户上一轮已经回答了什么，不要重复同一个问题。
 - 如果刚刚问过“最近一次什么时候发生/发生了什么”，而用户已经描述了失恋、暗恋、关系结束、被忽视等内容，就继续探索担心、情绪强度、身体反应或关系意义，不要再问同一句。
+- 信息收集不是无限追问。连续具体化 3 轮左右，且已经得到“主题/影响/时间线/关系或触发线索”中的至少两类信息时，必须主动收束：“当前信息收集完毕，可以进入下一个步骤。你觉得这样可行吗？”不要继续追问细节。
+- 如果已经提示进入下一步，用户表示同意或继续，就转入初步理解：帮助用户整理“情境-想法-情绪/身体-行为”链条，或邀请用户选择最想先看的部分。
 - 每次最多问 1 个核心问题。严格只输出一个问句，不要连续抛出多个问号。
 - 回复 2 到 5 句话。`;
+}
+
+function buildStageGuidance(session: ConsultationSession) {
+  if (hasOfferedIntakeTransition(session)) {
+    return "已完成信息收集收束。下一轮应进入初步理解或 CBT 链条整理，不要回到连续追问。";
+  }
+
+  const intakeTurns = countUserIntakeTurns(session);
+  const signalCount = countInformationSignals(session);
+  if (intakeTurns >= 3 && signalCount >= 2) {
+    return "信息已经足够进入下一步。请主动收束信息收集，邀请用户确认进入初步理解/整理阶段。";
+  }
+
+  return "仍可适度具体化，但不要连续抛出多个问题。";
 }
 
 function extractResponseText(data: unknown) {
@@ -209,6 +236,9 @@ function buildSupportiveReply(
   const userMessageCount = session.messages.filter((item) => item.role === "user").length;
   const lastAssistant = assistantMessages.at(-1)?.content ?? "";
   const normalized = message.replace(/\s/g, "");
+
+  const transitionReply = maybeBuildIntakeTransitionReply(session, message);
+  if (transitionReply) return transitionReply;
 
   if (message.includes("怎么办") || message.includes("建议") || message.includes("你告诉我")) {
     if (hasRelationshipContext(message, session)) {
@@ -281,4 +311,57 @@ function hasRelationshipContext(message: string, session: ConsultationSession) {
   return ["失恋", "暗恋", "喜欢的人", "不理我", "关系结束", "分手", "他不回", "她不回"].some(
     (keyword) => text.includes(keyword)
   );
+}
+
+function maybeBuildIntakeTransitionReply(session: ConsultationSession, message: string) {
+  if (hasOfferedIntakeTransition(session)) return null;
+  if (countUserIntakeTurns(session) < 3) return null;
+  if (countInformationSignals(session, message) < 2) return null;
+
+  const topic = session.primaryTag ?? session.selectedTags[0] ?? "当下困扰";
+  const text = [message, ...session.messages.map((item) => item.content)].join("\n");
+  const details = [`本次主题先放在“${topic}”上`];
+
+  if (hasAnyKeyword(text, ["不能行动", "不行动", "精力", "睡不好", "影响", "耗尽", "没有力气", "疲惫"])) {
+    details.push("它已经影响到你的行动、精力或日常状态");
+  }
+
+  if (hasAnyKeyword(text, ["最近", "今天", "昨天", "上周", "3周", "三周", "一个月", "时候", "开始"])) {
+    details.push("你也给出了一些时间线索");
+  }
+
+  if (hasAnyKeyword(text, ["亲密关系", "关系", "失恋", "暗恋", "喜欢的人", "伴侣", "对方", "他", "她"])) {
+    details.push("这件事还和关系处境有关");
+  }
+
+  return `我先把信息收集在这里停一下。现在已经能看到几个关键点：${details.join("，")}。继续反复追问细节可能会让你更累，当前信息收集完毕，可以进入下一个步骤：一起整理这件事里的“情境-想法-情绪/身体-行为”链条。你觉得这样可行吗？`;
+}
+
+function hasOfferedIntakeTransition(session: ConsultationSession) {
+  return session.messages.some((item) =>
+    ["当前信息收集完毕", "信息收集在这里停一下", "进入下一个步骤"].some((marker) =>
+      item.content.includes(marker)
+    )
+  );
+}
+
+function countUserIntakeTurns(session: ConsultationSession) {
+  return session.messages.filter((item) => item.role === "user").length;
+}
+
+function countInformationSignals(session: ConsultationSession, currentMessage = "") {
+  const text = [currentMessage, ...session.messages.map((item) => item.content)].join("\n");
+  const signalGroups = [
+    ["内耗", "焦虑", "压力", "情绪低落", "烦闷", "失落", "紧张", "窒息", "压抑"],
+    ["不能行动", "不行动", "精力", "睡不好", "影响", "耗尽", "没有力气", "疲惫"],
+    ["最近", "今天", "昨天", "上周", "3周", "三周", "一个月", "时候", "开始"],
+    ["亲密关系", "关系", "失恋", "暗恋", "喜欢的人", "伴侣", "对方", "他", "她"],
+    ["担心", "害怕", "最在意", "最难受", "压抑", "受限", "窒息"]
+  ];
+
+  return signalGroups.filter((group) => group.some((keyword) => text.includes(keyword))).length;
+}
+
+function hasAnyKeyword(text: string, keywords: string[]) {
+  return keywords.some((keyword) => text.includes(keyword));
 }
