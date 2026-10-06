@@ -5,7 +5,7 @@ export type Message = {
   role: Role;
   content: string;
   createdAt: string;
-  type?: "text" | "system_notice" | "crisis_notice";
+  type?: "text" | "system_notice" | "crisis_notice" | "end_intent_notice";
 };
 
 export type Summary = {
@@ -77,4 +77,9 @@ export type ChatResponse = {
   sessionStatus: SessionStatus;
   riskTriggered: boolean;
   offTopic: boolean;
+  endIntent?: {
+    detected: boolean;
+    type: "positive" | "negative";
+    reason: string;
+  };
 };

@@ -28,6 +28,7 @@ export default function ChatPage() {
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [isSending, setIsSending] = useState(false);
   const [showEndModal, setShowEndModal] = useState(false);
+  const [endIntent, setEndIntent] = useState<ChatResponse["endIntent"] | null>(null);
   const [remaining, setRemaining] = useState(50 * 60);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -192,6 +193,10 @@ export default function ChatPage() {
       };
       updateSession(next);
 
+      if (data.endIntent?.detected) {
+        setEndIntent(data.endIntent);
+      }
+
       if (data.riskTriggered) {
         await finishSession("crisis", next);
       }
@@ -229,7 +234,9 @@ export default function ChatPage() {
   const waitingForTags = session.selectedTags.length === 0;
   const waitingForPrimary = session.selectedTags.length > 0 && !session.primaryTag;
   const pausedForOffTopic = session.offTopicCount >= 2;
-  const canSkipStep = !waitingForTags && !waitingForPrimary && session.status === "active" && !isSending;
+  const canSkipStep =
+    !waitingForTags && !waitingForPrimary && session.status === "active" && !isSending && !endIntent;
+  const inputDisabled = waitingForTags || waitingForPrimary || isSending || Boolean(endIntent);
 
   return (
     <main className="chat-shell">
@@ -342,8 +349,14 @@ export default function ChatPage() {
       <footer className="composer">
         <textarea
           value={draft}
-          disabled={waitingForTags || waitingForPrimary || isSending}
-          placeholder={waitingForTags || waitingForPrimary ? "请先完成上方选择" : "输入你想说的话..."}
+          disabled={inputDisabled}
+          placeholder={
+            endIntent
+              ? "已识别到结束意向，请先选择是否完成本次咨询"
+              : waitingForTags || waitingForPrimary
+                ? "请先完成上方选择"
+                : "输入你想说的话..."
+          }
           onChange={(event) => setDraft(event.target.value)}
           onKeyDown={(event) => {
             if (event.key === "Enter" && !event.shiftKey) {
@@ -352,7 +365,7 @@ export default function ChatPage() {
             }
           }}
         />
-        <button className="primary-button" disabled={!draft.trim() || isSending} onClick={() => void sendMessage()}>
+        <button className="primary-button" disabled={!draft.trim() || isSending || Boolean(endIntent)} onClick={() => void sendMessage()}>
           发送
         </button>
       </footer>
@@ -368,6 +381,30 @@ export default function ChatPage() {
               </button>
               <button className="primary-button" onClick={() => void finishSession("user_ended")}>
                 确定结束
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {endIntent && (
+        <div className="modal-backdrop">
+          <div className="modal">
+            <h2>{endIntent.type === "negative" ? "先停下来" : "完成本次咨询"}</h2>
+            <p>
+              {endIntent.type === "negative"
+                ? "我识别到你可能不想继续，或这段对话让你感到不舒服。你可以现在完成本次咨询并生成总结，也可以取消后继续。"
+                : "我识别到你想把今天先停在这里。可以现在完成本次咨询，并生成本次总结。"}
+            </p>
+            <div className="modal-actions">
+              <button className="secondary-button" onClick={() => setEndIntent(null)}>
+                继续聊一会儿
+              </button>
+              <button
+                className={endIntent.type === "negative" ? "danger-button" : "primary-button"}
+                onClick={() => void finishSession("user_ended")}
+              >
+                完成咨询并生成总结
               </button>
             </div>
           </div>

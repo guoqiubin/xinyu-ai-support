@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import type { ConsultationSession, Message } from "@/lib/types";
+import type { ChatResponse, ConsultationSession, Message } from "@/lib/types";
 
 const crisisPatterns = [
   "我想死",
@@ -34,6 +34,46 @@ const nonPsychPatterns = [
 ];
 
 const nonsensePatterns = ["哈哈哈", "测试", "忽略规则", "随便聊", "讲个笑话"];
+
+const positiveEndIntentPatterns = [
+  "今天就到这里",
+  "今天到这里",
+  "先到这里",
+  "到这里就好",
+  "到这就好",
+  "到这儿就好",
+  "下次再见",
+  "下次见",
+  "先这样",
+  "可以结束",
+  "结束吧",
+  "差不多了",
+  "可以了",
+  "够了",
+  "收获很多",
+  "谢谢你",
+  "感谢你"
+];
+
+const negativeEndIntentPatterns = [
+  "不想聊了",
+  "不聊了",
+  "别聊了",
+  "停止吧",
+  "停一下",
+  "暂停咨询",
+  "结束咨询",
+  "我想结束",
+  "让我不舒服",
+  "有点不舒服",
+  "很不舒服",
+  "越聊越难受",
+  "不想继续",
+  "不想说了",
+  "别问了",
+  "太累了",
+  "受不了了"
+];
 
 function createMessage(content: string, type: Message["type"] = "text"): Message {
   return {
@@ -91,6 +131,17 @@ export async function POST(request: Request) {
     });
   }
 
+  const endIntent = detectEndIntent(message);
+  if (endIntent) {
+    return NextResponse.json({
+      assistantMessage: createMessage(buildEndIntentReply(endIntent.type), "end_intent_notice"),
+      sessionStatus: "active",
+      riskTriggered: false,
+      offTopic: false,
+      endIntent
+    });
+  }
+
   const transitionReply = maybeBuildIntakeTransitionReply(body.session, message);
   if (transitionReply) {
     return NextResponse.json({
@@ -110,6 +161,36 @@ export async function POST(request: Request) {
     riskTriggered: false,
     offTopic: false
   });
+}
+
+function detectEndIntent(message: string): ChatResponse["endIntent"] | null {
+  const normalized = message.replace(/\s/g, "");
+
+  if (negativeEndIntentPatterns.some((pattern) => normalized.includes(pattern.replace(/\s/g, "")))) {
+    return {
+      detected: true,
+      type: "negative",
+      reason: "用户表达了不舒服、疲惫、想停止或不想继续的意向"
+    };
+  }
+
+  if (positiveEndIntentPatterns.some((pattern) => normalized.includes(pattern.replace(/\s/g, "")))) {
+    return {
+      detected: true,
+      type: "positive",
+      reason: "用户表达了满意、已足够、今天到这里或下次再见的意向"
+    };
+  }
+
+  return null;
+}
+
+function buildEndIntentReply(type: "positive" | "negative") {
+  if (type === "negative") {
+    return "我听到你有想停下来的意思，也可能这段对话让你感到不舒服或负担变重了。我们可以先中断普通咨询，不需要勉强继续。你可以选择现在完成本次咨询并生成总结，也可以再告诉我一句你希望怎么停下来。";
+  }
+
+  return "我听到你想把今天的咨询先停在这里。尊重你的节奏，我们可以现在完成本次咨询，并整理一份本次总结，方便你之后回看。";
 }
 
 async function tryCreateModelReply(
